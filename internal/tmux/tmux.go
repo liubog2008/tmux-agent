@@ -1,0 +1,144 @@
+package tmux
+
+import (
+	"bytes"
+	"fmt"
+	"os/exec"
+	"strings"
+)
+
+type Pane struct {
+	SessionID       string
+	SessionName     string
+	WindowID        string
+	WindowName      string
+	PaneID          string
+	CurrentPath     string
+	AgentRole       string
+	AgentSource     string
+	RuntimeKey      string
+	AgentStatus     string
+	AgentUpdatedAt  string
+	AgentTitle      string
+	SessionKind     string
+}
+
+type Session struct {
+	SessionID      string
+	SessionName    string
+	WindowCount    string
+	Attached       string
+	LastAttached   string
+	SessionKind    string
+}
+
+func ListPanes() ([]Pane, error) {
+	format := "#{session_id}|#{session_name}|#{window_id}|#{window_name}|#{pane_id}|#{pane_current_path}|#{@agent_role}|#{@agent_source}|#{@agent_runtime_key}|#{@agent_status}|#{@agent_updated_at}|#{@agent_title}|#{@session_kind}"
+	out, err := run("list-panes", "-a", "-F", format)
+	if err != nil {
+		return nil, err
+	}
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	panes := make([]Pane, 0, len(lines))
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		parts := strings.Split(line, "|")
+		if len(parts) < 13 {
+			continue
+		}
+		panes = append(panes, Pane{
+			SessionID:      parts[0],
+			SessionName:    parts[1],
+			WindowID:       parts[2],
+			WindowName:     parts[3],
+			PaneID:         parts[4],
+			CurrentPath:    parts[5],
+			AgentRole:      parts[6],
+			AgentSource:    parts[7],
+			RuntimeKey:     parts[8],
+			AgentStatus:    parts[9],
+			AgentUpdatedAt: parts[10],
+			AgentTitle:     parts[11],
+			SessionKind:    parts[12],
+		})
+	}
+	return panes, nil
+}
+
+func ListSessions() ([]Session, error) {
+	format := "#{session_id}|#{session_name}|#{session_windows}|#{session_attached}|#{session_last_attached}|#{@session_kind}"
+	out, err := run("list-sessions", "-F", format)
+	if err != nil {
+		return nil, err
+	}
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	sessions := make([]Session, 0, len(lines))
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		parts := strings.Split(line, "|")
+		if len(parts) < 6 {
+			continue
+		}
+		sessions = append(sessions, Session{
+			SessionID:    parts[0],
+			SessionName:  parts[1],
+			WindowCount:  parts[2],
+			Attached:     parts[3],
+			LastAttached: parts[4],
+			SessionKind:  parts[5],
+		})
+	}
+	return sessions, nil
+}
+
+func SetPaneOption(paneID, name, value string) error {
+	if paneID == "" {
+		return fmt.Errorf("pane id is required")
+	}
+	_, err := run("set-option", "-p", "-t", paneID, name, value)
+	return err
+}
+
+func SetSessionOption(sessionID, name, value string) error {
+	if sessionID == "" {
+		return fmt.Errorf("session id is required")
+	}
+	_, err := run("set-option", "-t", sessionID, name, value)
+	return err
+}
+
+func SelectPane(paneID string) error {
+	_, err := run("select-pane", "-t", paneID)
+	return err
+}
+
+func SwitchClient(sessionID string) error {
+	_, err := run("switch-client", "-t", sessionID)
+	return err
+}
+
+func KillPane(paneID string) error {
+	_, err := run("kill-pane", "-t", paneID)
+	return err
+}
+
+func run(args ...string) (string, error) {
+	cmd := exec.Command("tmux", args...)
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	if err != nil {
+		msg := strings.TrimSpace(stderr.String())
+		if msg == "" {
+			msg = err.Error()
+		}
+		return "", fmt.Errorf("tmux %s: %s", strings.Join(args, " "), msg)
+	}
+	return stdout.String(), nil
+}
