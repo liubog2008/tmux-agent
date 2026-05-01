@@ -1,41 +1,120 @@
-package main
+package app
 
 import (
 	"errors"
 	"flag"
 	"fmt"
+	"log"
 	"os"
+	"path/filepath"
 	"strings"
+
+	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/liubog2008/tmux-agent/internal/state"
 	"github.com/liubog2008/tmux-agent/internal/tmux"
+	"github.com/liubog2008/tmux-agent/internal/ui"
 )
 
-func main() {
-	if len(os.Args) < 2 {
-		usage()
-		os.Exit(2)
+func Run(args []string) error {
+	if len(args) < 2 {
+		usage(args[0])
+		return errors.New("subcommand is required")
 	}
 
 	var err error
-	switch os.Args[1] {
+	switch args[1] {
+	case "sidebar":
+		err = runSidebar()
+	case "toggle":
+		err = runToggle()
+	case "open":
+		err = runOpen()
+	case "close":
+		err = runClose(args[2:])
 	case "start":
-		err = runStart(os.Args[2:])
+		err = runStart(args[2:])
 	case "update":
-		err = runUpdate(os.Args[2:])
+		err = runUpdate(args[2:])
 	case "finish":
-		err = runFinish(os.Args[2:])
+		err = runFinish(args[2:])
 	case "cleanup":
-		err = runCleanup(os.Args[2:])
+		err = runCleanup(args[2:])
+	case "help":
+		usage(args[0])
+		return nil
 	default:
-		usage()
-		os.Exit(2)
+		usage(args[0])
+		return fmt.Errorf("unknown subcommand: %s", args[1])
 	}
 
+	return err
+}
+
+func runSidebar() error {
+	program := tea.NewProgram(ui.NewModel())
+	_, err := program.Run()
+	return err
+}
+
+func runToggle() error {
+	paneID, err := tmux.FindPaneByOption("@agent_sidebar_role", "sidebar")
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+		return err
 	}
+	if paneID != "" {
+		return tmux.KillPane(paneID)
+	}
+	return runOpen()
+}
+
+func runOpen() error {
+	width, err := tmux.ShowOption("@agent-sidebar-width")
+	if err != nil || width == "" {
+		width = "42"
+	}
+	side, err := tmux.ShowOption("@agent-sidebar-side")
+	if err != nil || side == "" {
+		side = "right"
+	}
+
+	exe, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("resolve executable: %w", err)
+	}
+	exe, err = filepath.EvalSymlinks(exe)
+	if err != nil {
+		exe = filepath.Clean(exe)
+	}
+
+	paneID, err := tmux.SplitWindow(side, width, exe, "sidebar")
+	if err != nil {
+		return err
+	}
+	if err := tmux.SetPaneOption(paneID, "@agent_sidebar_role", "sidebar"); err != nil {
+		return err
+	}
+	return tmux.SetPaneTitle(paneID, "tmux-agent-sidebar")
+}
+
+func runClose(args []string) error {
+	fs := flag.NewFlagSet("close", flag.ContinueOnError)
+	paneID := fs.String("pane-id", "", "sidebar pane id")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	targetPane := *paneID
+	if targetPane == "" {
+		var err error
+		targetPane, err = tmux.FindPaneByOption("@agent_sidebar_role", "sidebar")
+		if err != nil {
+			return err
+		}
+	}
+	if targetPane == "" {
+		return nil
+	}
+	return tmux.KillPane(targetPane)
 }
 
 func runStart(args []string) error {
@@ -242,6 +321,14 @@ func (m *multiFlag) Set(value string) error {
 	return nil
 }
 
-func usage() {
-	fmt.Fprintf(os.Stderr, "usage: %s <start|update|finish|cleanup> [flags]\n", os.Args[0])
+func usage(name string) {
+	fmt.Fprintf(os.Stderr, "usage: %s <sidebar|toggle|open|close|start|update|finish|cleanup> [flags]\n", name)
+}
+
+func Exit(args []string) {
+	if err := Run(args); err != nil {
+		log.SetOutput(os.Stderr)
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 }

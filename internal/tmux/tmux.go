@@ -126,6 +126,54 @@ func KillPane(paneID string) error {
 	return err
 }
 
+func ShowOption(name string) (string, error) {
+	out, err := run("show-option", "-gv", name)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(out), nil
+}
+
+func SetPaneTitle(paneID, title string) error {
+	_, err := run("select-pane", "-t", paneID, "-T", title)
+	return err
+}
+
+func SplitWindow(side, width string, command ...string) (string, error) {
+	args := []string{"split-window", "-d", "-l", width, "-P", "-F", "#{pane_id}"}
+	if side == "left" {
+		args = append(args, "-hb")
+	} else {
+		args = append(args, "-h")
+	}
+	args = append(args, command...)
+	out, err := run(args...)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(out), nil
+}
+
+func FindPaneByOption(name, value string) (string, error) {
+	out, err := run("list-panes", "-F", fmt.Sprintf("#{pane_id}|#{%s}", name))
+	if err != nil {
+		return "", err
+	}
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		parts := strings.SplitN(line, "|", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		if parts[1] == value {
+			return parts[0], nil
+		}
+	}
+	return "", nil
+}
+
 func run(args ...string) (string, error) {
 	cmd := exec.Command("tmux", args...)
 	var stdout bytes.Buffer

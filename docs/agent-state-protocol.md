@@ -146,10 +146,10 @@ Meaning:
 Define a shared local command:
 
 ```bash
-tmux-agent-state start ...
-tmux-agent-state update ...
-tmux-agent-state finish ...
-tmux-agent-state cleanup ...
+tmux-agent start ...
+tmux-agent update ...
+tmux-agent finish ...
+tmux-agent cleanup ...
 ```
 
 This command is the only allowed writer for:
@@ -164,7 +164,7 @@ The sidebar does not write state.
 Example:
 
 ```bash
-tmux-agent-state start \
+tmux-agent start \
   --source codex \
   --pane-id %12 \
   --runtime-key codex-1746117600123-48291-a91c \
@@ -187,7 +187,7 @@ Behavior:
 Example:
 
 ```bash
-tmux-agent-state update \
+tmux-agent update \
   --runtime-key codex-1746117600123-48291-a91c \
   --status running \
   --title "fix auth bug" \
@@ -207,7 +207,7 @@ Behavior:
 Example:
 
 ```bash
-tmux-agent-state finish \
+tmux-agent finish \
   --runtime-key codex-1746117600123-48291-a91c \
   --status success
 ```
@@ -215,7 +215,7 @@ tmux-agent-state finish \
 Or:
 
 ```bash
-tmux-agent-state finish \
+tmux-agent finish \
   --runtime-key codex-1746117600123-48291-a91c \
   --status error \
   --last-error "permission denied"
@@ -232,7 +232,7 @@ Behavior:
 Example:
 
 ```bash
-tmux-agent-state cleanup --runtime-key codex-1746117600123-48291-a91c
+tmux-agent cleanup --runtime-key codex-1746117600123-48291-a91c
 ```
 
 Behavior:

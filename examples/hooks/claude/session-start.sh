@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-STATE_BIN="${TMUX_AGENT_STATE_BIN:-$ROOT_DIR/bin/tmux-agent-state}"
+STATE_BIN="${TMUX_AGENT_STATE_BIN:-${TMUX_AGENT_BIN:-$ROOT_DIR/bin/tmux-agent}}"
 RUNTIME_KEY="${TMUX_AGENT_RUNTIME_KEY:-claude-$(date +%s)-$$}"
 
 "$STATE_BIN" start \

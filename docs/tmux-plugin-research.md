@@ -109,7 +109,7 @@ Notes:
 
 - Define key bindings
 - Read user configuration
-- Call `scripts/toggle.sh`
+- Call the shared binary directly, for example `tmux-agent toggle`
 - Tag the sidebar pane, for example with `@agent_sidebar_pane=1`
 
 Suggested user options:
@@ -119,10 +119,10 @@ set -g @agent-sidebar-width '42'
 set -g @agent-sidebar-side 'right'
 set -g @agent-sidebar-refresh-ms '1000'
 set -g @agent-sidebar-key 'A'
-set -g @agent-sidebar-bin '~/.tmux/plugins/tmux-agent-sidebar/bin/tmux-agent-sidebar'
+set -g @agent-sidebar-bin 'tmux-agent'
 ```
 
-Core `toggle.sh` logic:
+Core `tmux-agent toggle` logic:
 
 1. Check whether the current window already has a sidebar pane
 2. If it exists, close it or focus it
