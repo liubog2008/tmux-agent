@@ -3,13 +3,18 @@
 This minimal MVP provides three main pieces:
 
 - `agent-sidebar.tmux`
-- `tmux-agent-state`
-- `sidebar`
+- `tmux-agent`
 
 ## Build
 
 ```bash
 ./scripts/build.sh
+```
+
+This produces:
+
+```bash
+./bin/tmux-agent
 ```
 
 ## Load in tmux
@@ -30,13 +35,19 @@ Default key binding:
 
 - `prefix + A`: open or close the right sidebar
 
+The tmux plugin defaults `@agent-sidebar-bin` to `tmux-agent`, so either add `./bin` to your `PATH` or override it in `~/.tmux.conf`:
+
+```tmux
+set -g @agent-sidebar-bin "/absolute/path/to/bin/tmux-agent"
+```
+
 ## Manually write test state
 
 Run this inside a tmux pane:
 
 ```bash
 export TMUX_AGENT_RUNTIME_KEY="codex-$(date +%s)-$$"
-./bin/tmux-agent-state start \
+./bin/tmux-agent start \
   --source codex \
   --runtime-key "$TMUX_AGENT_RUNTIME_KEY" \
   --title "demo codex task" \
@@ -46,7 +57,7 @@ export TMUX_AGENT_RUNTIME_KEY="codex-$(date +%s)-$$"
 Then run:
 
 ```bash
-./bin/tmux-agent-state update \
+./bin/tmux-agent update \
   --runtime-key "$TMUX_AGENT_RUNTIME_KEY" \
   --status waiting_input \
   --title "waiting for review"
@@ -61,7 +72,7 @@ Example scripts live in:
 - `examples/hooks/codex/`
 - `examples/hooks/claude/`
 
-These scripts call the shared `tmux-agent-state` command and write state into tmux pane options and runtime JSON.
+These scripts call the shared `tmux-agent` binary and write state into tmux pane options and runtime JSON.
 
 ## Notes
 
