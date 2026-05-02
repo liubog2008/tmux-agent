@@ -22,6 +22,7 @@ type Pane struct {
 	AgentUpdatedAt string
 	AgentTitle     string
 	SessionKind    string
+	WindowKind     string
 }
 
 type Session struct {
@@ -34,7 +35,7 @@ type Session struct {
 }
 
 func ListPanes() ([]Pane, error) {
-	format := "#{session_id}|#{session_name}|#{window_id}|#{window_name}|#{pane_id}|#{pane_current_path}|#{pane_active}|#{@agent_role}|#{@agent_source}|#{@agent_runtime_key}|#{@agent_status}|#{@agent_updated_at}|#{@agent_title}|#{@session_kind}"
+	format := "#{session_id}|#{session_name}|#{window_id}|#{window_name}|#{pane_id}|#{pane_current_path}|#{pane_active}|#{@agent_role}|#{@agent_source}|#{@agent_runtime_key}|#{@agent_status}|#{@agent_updated_at}|#{@agent_title}|#{@session_kind}|#{@window_kind}"
 	out, err := run("list-panes", "-a", "-F", format)
 	if err != nil {
 		return nil, err
@@ -46,7 +47,7 @@ func ListPanes() ([]Pane, error) {
 			continue
 		}
 		parts := strings.Split(line, "|")
-		if len(parts) < 14 {
+		if len(parts) < 15 {
 			continue
 		}
 		panes = append(panes, Pane{
@@ -64,6 +65,7 @@ func ListPanes() ([]Pane, error) {
 			AgentUpdatedAt: parts[11],
 			AgentTitle:     parts[12],
 			SessionKind:    parts[13],
+			WindowKind:     parts[14],
 		})
 	}
 	return panes, nil
@@ -110,6 +112,26 @@ func SetSessionOption(sessionID, name, value string) error {
 		return fmt.Errorf("session id is required")
 	}
 	_, err := run("set-option", "-t", sessionID, name, value)
+	return err
+}
+
+func SwitchClientTo(clientName, sessionID string) error {
+	if sessionID == "" {
+		return fmt.Errorf("session id is required")
+	}
+	args := []string{"switch-client", "-t", sessionID}
+	if clientName != "" {
+		args = append(args, "-c", clientName)
+	}
+	_, err := run(args...)
+	return err
+}
+
+func SetWindowOption(windowID, name, value string) error {
+	if windowID == "" {
+		return fmt.Errorf("window id is required")
+	}
+	_, err := run("set-option", "-w", "-t", windowID, name, value)
 	return err
 }
 
@@ -215,6 +237,77 @@ func NewWindow(path, name string, command ...string) (string, error) {
 	}
 	if name != "" {
 		args = append(args, "-n", name)
+	}
+	args = append(args, command...)
+	out, err := run(args...)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(out), nil
+}
+
+func NewWindowInSession(sessionTarget, path, name string, command ...string) (string, error) {
+	args := []string{"new-window", "-P", "-F", "#{pane_id}"}
+	if sessionTarget != "" {
+		args = append(args, "-t", sessionTarget)
+	}
+	if path != "" {
+		args = append(args, "-c", path)
+	}
+	if name != "" {
+		args = append(args, "-n", name)
+	}
+	args = append(args, command...)
+	out, err := run(args...)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(out), nil
+}
+
+func HasSession(sessionName string) (bool, error) {
+	if sessionName == "" {
+		return false, fmt.Errorf("session name is required")
+	}
+	_, err := run("has-session", "-t", sessionName)
+	if err == nil {
+		return true, nil
+	}
+	if strings.Contains(err.Error(), "can't find session") {
+		return false, nil
+	}
+	return false, err
+}
+
+func EnsureSession(sessionName, path string, command ...string) error {
+	if sessionName == "" {
+		return fmt.Errorf("session name is required")
+	}
+	ok, err := HasSession(sessionName)
+	if err != nil {
+		return err
+	}
+	if ok {
+		return nil
+	}
+	args := []string{"new-session", "-d", "-s", sessionName}
+	if path != "" {
+		args = append(args, "-c", path)
+	}
+	if len(command) > 0 {
+		args = append(args, command...)
+	}
+	_, err = run(args...)
+	return err
+}
+
+func NewDetachedSession(sessionName, path, windowName string, command ...string) (string, error) {
+	args := []string{"new-session", "-d", "-P", "-F", "#{pane_id}", "-s", sessionName}
+	if path != "" {
+		args = append(args, "-c", path)
+	}
+	if windowName != "" {
+		args = append(args, "-n", windowName)
 	}
 	args = append(args, command...)
 	out, err := run(args...)
