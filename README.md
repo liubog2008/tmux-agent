@@ -59,7 +59,7 @@ tmux source-file ~/.tmux.conf
 Default key binding:
 
 - `prefix + A`: open or close the right sidebar
-- `prefix + N`: create a new `agent` window in the dedicated `__agent__` session and register it in the sidebar
+- `prefix + N`: switch between the current normal window and its corresponding `agent` window; if the target side does not exist, create it in the same directory and register the agent window in the sidebar
 
 The tmux plugin defaults `@agent-sidebar-bin` to `tmux-agent`, so make sure the installed binary is in your `PATH`, or override it in `~/.tmux.conf`:
 

@@ -9,6 +9,6 @@ set-option -gq focus-events on
 set-option -gq @agent-sidebar-status-format "#(#{@agent-sidebar-bin} status-segment)"
 
 bind-key A run-shell "#{@agent-sidebar-bin} toggle"
-bind-key N run-shell "#{@agent-sidebar-bin} new-window"
+bind-key N run-shell "#{@agent-sidebar-bin} switch-window"
 
 set-hook -g pane-focus-out 'run-shell "#{@agent-sidebar-bin} close --pane-id #{hook_pane}"'

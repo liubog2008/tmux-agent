@@ -21,6 +21,8 @@ type Pane struct {
 	AgentStatus    string
 	AgentUpdatedAt string
 	AgentTitle     string
+	OwnerSessionID string
+	OwnerWindowID  string
 	SessionKind    string
 	WindowKind     string
 }
@@ -35,7 +37,7 @@ type Session struct {
 }
 
 func ListPanes() ([]Pane, error) {
-	format := "#{session_id}|#{session_name}|#{window_id}|#{window_name}|#{pane_id}|#{pane_current_path}|#{pane_active}|#{@agent_role}|#{@agent_source}|#{@agent_runtime_key}|#{@agent_status}|#{@agent_updated_at}|#{@agent_title}|#{@session_kind}|#{@window_kind}"
+	format := "#{session_id}|#{session_name}|#{window_id}|#{window_name}|#{pane_id}|#{pane_current_path}|#{pane_active}|#{@agent_role}|#{@agent_source}|#{@agent_runtime_key}|#{@agent_status}|#{@agent_updated_at}|#{@agent_title}|#{@agent_owner_session_id}|#{@agent_owner_window_id}|#{@session_kind}|#{@window_kind}"
 	out, err := run("list-panes", "-a", "-F", format)
 	if err != nil {
 		return nil, err
@@ -47,7 +49,7 @@ func ListPanes() ([]Pane, error) {
 			continue
 		}
 		parts := strings.Split(line, "|")
-		if len(parts) < 15 {
+		if len(parts) < 17 {
 			continue
 		}
 		panes = append(panes, Pane{
@@ -64,8 +66,10 @@ func ListPanes() ([]Pane, error) {
 			AgentStatus:    parts[10],
 			AgentUpdatedAt: parts[11],
 			AgentTitle:     parts[12],
-			SessionKind:    parts[13],
-			WindowKind:     parts[14],
+			OwnerSessionID: parts[13],
+			OwnerWindowID:  parts[14],
+			SessionKind:    parts[15],
+			WindowKind:     parts[16],
 		})
 	}
 	return panes, nil
