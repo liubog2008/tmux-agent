@@ -12,6 +12,7 @@ RUNTIME_KEY="${TMUX_AGENT_RUNTIME_KEY:-claude-$(date +%s)-$$}"
   --cwd "${PWD}" \
   --repo "${PWD}" \
   --title "${CLAUDE_TASK_TITLE:-claude session}" \
+  --status running \
   --model "${CLAUDE_MODEL:-}"
 
 echo "$RUNTIME_KEY" > "${TMPDIR:-/tmp}/tmux-agent-runtime-key"

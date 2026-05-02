@@ -59,6 +59,7 @@ tmux source-file ~/.tmux.conf
 Default key binding:
 
 - `prefix + A`: open or close the right sidebar
+- `prefix + N`: create a new `agent` window and register it in the sidebar
 
 The tmux plugin defaults `@agent-sidebar-bin` to `tmux-agent`, so make sure the installed binary is in your `PATH`, or override it in `~/.tmux.conf`:
 
@@ -66,12 +67,24 @@ The tmux plugin defaults `@agent-sidebar-bin` to `tmux-agent`, so make sure the 
 set -g @agent-sidebar-bin "/absolute/path/to/bin/tmux-agent"
 ```
 
+The plugin also installs tmux hooks so that:
+
+- opening the sidebar immediately focuses it
+- moving focus away from the sidebar automatically closes it
+
+This behavior is implemented with tmux `focus-events` and the `pane-focus-out` hook, which calls `tmux-agent close --pane-id #{hook_pane}`.
+
 ## Manually write test state
 
 Run this inside a tmux pane:
 
 ```bash
 export TMUX_AGENT_RUNTIME_KEY="codex-$(date +%s)-$$"
+./bin/tmux-agent prepare \
+  --source codex \
+  --runtime-key "$TMUX_AGENT_RUNTIME_KEY" \
+  --title "new codex window"
+
 ./bin/tmux-agent start \
   --source codex \
   --runtime-key "$TMUX_AGENT_RUNTIME_KEY" \
@@ -87,6 +100,8 @@ Then run:
   --status waiting_input \
   --title "waiting for review"
 ```
+
+`prepare` can be called as soon as a new tmux window is created so the pane is immediately classified as an agent pane in the sidebar. `start` then promotes the same runtime to `running` when the real agent process begins.
 
 The sidebar will show the state in the `Agents` section.
 

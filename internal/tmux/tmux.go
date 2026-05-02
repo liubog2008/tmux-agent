@@ -8,32 +8,33 @@ import (
 )
 
 type Pane struct {
-	SessionID       string
-	SessionName     string
-	WindowID        string
-	WindowName      string
-	PaneID          string
-	CurrentPath     string
-	AgentRole       string
-	AgentSource     string
-	RuntimeKey      string
-	AgentStatus     string
-	AgentUpdatedAt  string
-	AgentTitle      string
-	SessionKind     string
-}
-
-type Session struct {
 	SessionID      string
 	SessionName    string
-	WindowCount    string
-	Attached       string
-	LastAttached   string
+	WindowID       string
+	WindowName     string
+	PaneID         string
+	CurrentPath    string
+	Active         string
+	AgentRole      string
+	AgentSource    string
+	RuntimeKey     string
+	AgentStatus    string
+	AgentUpdatedAt string
+	AgentTitle     string
 	SessionKind    string
 }
 
+type Session struct {
+	SessionID    string
+	SessionName  string
+	WindowCount  string
+	Attached     string
+	LastAttached string
+	SessionKind  string
+}
+
 func ListPanes() ([]Pane, error) {
-	format := "#{session_id}|#{session_name}|#{window_id}|#{window_name}|#{pane_id}|#{pane_current_path}|#{@agent_role}|#{@agent_source}|#{@agent_runtime_key}|#{@agent_status}|#{@agent_updated_at}|#{@agent_title}|#{@session_kind}"
+	format := "#{session_id}|#{session_name}|#{window_id}|#{window_name}|#{pane_id}|#{pane_current_path}|#{pane_active}|#{@agent_role}|#{@agent_source}|#{@agent_runtime_key}|#{@agent_status}|#{@agent_updated_at}|#{@agent_title}|#{@session_kind}"
 	out, err := run("list-panes", "-a", "-F", format)
 	if err != nil {
 		return nil, err
@@ -45,7 +46,7 @@ func ListPanes() ([]Pane, error) {
 			continue
 		}
 		parts := strings.Split(line, "|")
-		if len(parts) < 13 {
+		if len(parts) < 14 {
 			continue
 		}
 		panes = append(panes, Pane{
@@ -55,13 +56,14 @@ func ListPanes() ([]Pane, error) {
 			WindowName:     parts[3],
 			PaneID:         parts[4],
 			CurrentPath:    parts[5],
-			AgentRole:      parts[6],
-			AgentSource:    parts[7],
-			RuntimeKey:     parts[8],
-			AgentStatus:    parts[9],
-			AgentUpdatedAt: parts[10],
-			AgentTitle:     parts[11],
-			SessionKind:    parts[12],
+			Active:         parts[6],
+			AgentRole:      parts[7],
+			AgentSource:    parts[8],
+			RuntimeKey:     parts[9],
+			AgentStatus:    parts[10],
+			AgentUpdatedAt: parts[11],
+			AgentTitle:     parts[12],
+			SessionKind:    parts[13],
 		})
 	}
 	return panes, nil
@@ -134,6 +136,25 @@ func ShowOption(name string) (string, error) {
 	return strings.TrimSpace(out), nil
 }
 
+func ShowPaneOption(paneID, name string) (string, error) {
+	if paneID == "" {
+		return "", fmt.Errorf("pane id is required")
+	}
+	out, err := run("show-option", "-p", "-v", "-t", paneID, name)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(out), nil
+}
+
+func Format(format string) (string, error) {
+	out, err := run("display-message", "-p", format)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(out), nil
+}
+
 func SetPaneTitle(paneID, title string) error {
 	_, err := run("select-pane", "-t", paneID, "-T", title)
 	return err
@@ -145,6 +166,22 @@ func SplitWindow(side, width string, command ...string) (string, error) {
 		args = append(args, "-hb")
 	} else {
 		args = append(args, "-h")
+	}
+	args = append(args, command...)
+	out, err := run(args...)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(out), nil
+}
+
+func NewWindow(path, name string, command ...string) (string, error) {
+	args := []string{"new-window", "-P", "-F", "#{pane_id}"}
+	if path != "" {
+		args = append(args, "-c", path)
+	}
+	if name != "" {
+		args = append(args, "-n", name)
 	}
 	args = append(args, command...)
 	out, err := run(args...)
