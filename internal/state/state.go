@@ -22,26 +22,26 @@ const (
 )
 
 type RuntimeState struct {
-	Version       int               `json:"version"`
-	RuntimeKey    string            `json:"runtime_key"`
-	Source        string            `json:"source"`
-	PaneID        string            `json:"pane_id"`
-	TmuxSession   string            `json:"tmux_session,omitempty"`
-	TmuxWindow    string            `json:"tmux_window,omitempty"`
-	TmuxWindowName string           `json:"tmux_window_name,omitempty"`
-	Repo          string            `json:"repo,omitempty"`
-	CWD           string            `json:"cwd,omitempty"`
-	Status        string            `json:"status"`
-	Title         string            `json:"title,omitempty"`
-	TaskSummary   string            `json:"task_summary,omitempty"`
-	SessionID     string            `json:"session_id,omitempty"`
-	ParentAgentID string            `json:"parent_agent_id,omitempty"`
-	Model         string            `json:"model,omitempty"`
-	StartedAt     string            `json:"started_at"`
-	UpdatedAt     string            `json:"updated_at"`
-	EndedAt       string            `json:"ended_at,omitempty"`
-	LastError     string            `json:"last_error,omitempty"`
-	Metadata      map[string]string `json:"metadata,omitempty"`
+	Version        int               `json:"version"`
+	RuntimeKey     string            `json:"runtime_key"`
+	Source         string            `json:"source"`
+	PaneID         string            `json:"pane_id"`
+	TmuxSession    string            `json:"tmux_session,omitempty"`
+	TmuxWindow     string            `json:"tmux_window,omitempty"`
+	TmuxWindowName string            `json:"tmux_window_name,omitempty"`
+	Repo           string            `json:"repo,omitempty"`
+	CWD            string            `json:"cwd,omitempty"`
+	Status         string            `json:"status"`
+	Title          string            `json:"title,omitempty"`
+	TaskSummary    string            `json:"task_summary,omitempty"`
+	SessionID      string            `json:"session_id,omitempty"`
+	ParentAgentID  string            `json:"parent_agent_id,omitempty"`
+	Model          string            `json:"model,omitempty"`
+	StartedAt      string            `json:"started_at"`
+	UpdatedAt      string            `json:"updated_at"`
+	EndedAt        string            `json:"ended_at,omitempty"`
+	LastError      string            `json:"last_error,omitempty"`
+	Metadata       map[string]string `json:"metadata,omitempty"`
 }
 
 type UpdateInput struct {
@@ -63,22 +63,22 @@ type UpdateInput struct {
 func NewRuntimeState(input UpdateInput) RuntimeState {
 	now := time.Now().Format(time.RFC3339)
 	return RuntimeState{
-		Version:      Version,
-		RuntimeKey:   input.RuntimeKey,
-		Source:       input.Source,
-		PaneID:       input.PaneID,
-		Repo:         input.Repo,
-		CWD:          input.CWD,
-		Status:       input.Status,
-		Title:        input.Title,
-		TaskSummary:  input.TaskSummary,
-		SessionID:    input.SessionID,
+		Version:       Version,
+		RuntimeKey:    input.RuntimeKey,
+		Source:        input.Source,
+		PaneID:        input.PaneID,
+		Repo:          input.Repo,
+		CWD:           input.CWD,
+		Status:        input.Status,
+		Title:         input.Title,
+		TaskSummary:   input.TaskSummary,
+		SessionID:     input.SessionID,
 		ParentAgentID: input.ParentID,
-		Model:        input.Model,
-		LastError:    input.LastError,
-		Metadata:     cloneMap(input.Metadata),
-		StartedAt:    now,
-		UpdatedAt:    now,
+		Model:         input.Model,
+		LastError:     input.LastError,
+		Metadata:      cloneMap(input.Metadata),
+		StartedAt:     now,
+		UpdatedAt:     now,
 	}
 }
 

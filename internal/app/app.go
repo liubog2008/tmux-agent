@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -32,6 +33,10 @@ func Run(args []string) error {
 		err = runOpen()
 	case "close":
 		err = runClose(args[2:])
+	case "new-window":
+		err = runNewWindow()
+	case "prepare":
+		err = runPrepare(args[2:])
 	case "start":
 		err = runStart(args[2:])
 	case "update":
@@ -78,13 +83,9 @@ func runOpen() error {
 		side = "right"
 	}
 
-	exe, err := os.Executable()
+	exe, err := selfExecutable()
 	if err != nil {
-		return fmt.Errorf("resolve executable: %w", err)
-	}
-	exe, err = filepath.EvalSymlinks(exe)
-	if err != nil {
-		exe = filepath.Clean(exe)
+		return err
 	}
 
 	paneID, err := tmux.SplitWindow(side, width, exe, "sidebar")
@@ -94,7 +95,10 @@ func runOpen() error {
 	if err := tmux.SetPaneOption(paneID, "@agent_sidebar_role", "sidebar"); err != nil {
 		return err
 	}
-	return tmux.SetPaneTitle(paneID, "tmux-agent-sidebar")
+	if err := tmux.SetPaneTitle(paneID, "tmux-agent-sidebar"); err != nil {
+		return err
+	}
+	return tmux.SelectPane(paneID)
 }
 
 func runClose(args []string) error {
@@ -104,7 +108,15 @@ func runClose(args []string) error {
 		return err
 	}
 	targetPane := *paneID
-	if targetPane == "" {
+	if targetPane != "" {
+		role, err := tmux.ShowPaneOption(targetPane, "@agent_sidebar_role")
+		if err != nil {
+			return err
+		}
+		if role != "sidebar" {
+			return nil
+		}
+	} else {
 		var err error
 		targetPane, err = tmux.FindPaneByOption("@agent_sidebar_role", "sidebar")
 		if err != nil {
@@ -117,13 +129,101 @@ func runClose(args []string) error {
 	return tmux.KillPane(targetPane)
 }
 
+func runNewWindow() error {
+	exe, err := selfExecutable()
+	if err != nil {
+		return err
+	}
+
+	windowName, err := tmux.ShowOption("@agent-sidebar-agent-window-name")
+	if err != nil || windowName == "" {
+		windowName = "agent"
+	}
+
+	currentPath, err := tmux.Format("#{pane_current_path}")
+	if err != nil || currentPath == "" {
+		currentPath, _ = os.Getwd()
+	}
+
+	defaultShell, err := tmux.ShowOption("default-shell")
+	if err != nil || defaultShell == "" {
+		defaultShell = os.Getenv("SHELL")
+	}
+	if defaultShell == "" {
+		defaultShell = "/bin/sh"
+	}
+
+	runtimeKey := fmt.Sprintf("agent-%d-%d", time.Now().Unix(), os.Getpid())
+	paneID, err := tmux.NewWindow(
+		currentPath,
+		windowName,
+		"env",
+		"TMUX_AGENT_RUNTIME_KEY="+runtimeKey,
+		"TMUX_AGENT_BIN="+exe,
+		defaultShell,
+		"-l",
+	)
+	if err != nil {
+		return err
+	}
+	if err := tmux.SetPaneTitle(paneID, windowName); err != nil {
+		return err
+	}
+
+	input := state.UpdateInput{
+		RuntimeKey: runtimeKey,
+		Source:     "codex",
+		PaneID:     paneID,
+		Status:     state.StatusStarting,
+		Repo:       currentPath,
+		CWD:        currentPath,
+		Title:      windowName,
+	}
+	st, err := loadOrCreateState(input)
+	if err != nil {
+		return err
+	}
+	if err := enrichStateFromTMUX(&st); err != nil {
+		return err
+	}
+	if err := state.Save(st); err != nil {
+		return err
+	}
+	return syncTMUX(st, paneID)
+}
+
+func runPrepare(args []string) error {
+	fs := flag.NewFlagSet("prepare", flag.ContinueOnError)
+	input, paneID, metadata, err := parseCommonFlags(fs, args, true)
+	if err != nil {
+		return err
+	}
+	st, err := loadOrCreateState(input)
+	if err != nil {
+		return err
+	}
+	if err := enrichStateFromTMUX(&st); err != nil {
+		return err
+	}
+	if len(metadata) > 0 {
+		st.Metadata = metadata
+	}
+	if err := state.Save(st); err != nil {
+		return err
+	}
+	return syncTMUX(st, paneID)
+}
+
 func runStart(args []string) error {
 	fs := flag.NewFlagSet("start", flag.ContinueOnError)
 	input, paneID, metadata, err := parseCommonFlags(fs, args, true)
 	if err != nil {
 		return err
 	}
-	st := state.NewRuntimeState(input)
+	st, err := loadOrCreateState(input)
+	if err != nil {
+		return err
+	}
 	if err := enrichStateFromTMUX(&st); err != nil {
 		return err
 	}
@@ -248,6 +348,18 @@ func parseCommonFlags(fs *flag.FlagSet, args []string, requireStartFields bool) 
 	return input, *paneID, input.Metadata, nil
 }
 
+func loadOrCreateState(input state.UpdateInput) (state.RuntimeState, error) {
+	st, err := state.Load(input.RuntimeKey)
+	if err == nil {
+		st.ApplyUpdate(input, false)
+		return st, nil
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		return state.RuntimeState{}, fmt.Errorf("load state: %w", err)
+	}
+	return state.NewRuntimeState(input), nil
+}
+
 func enrichStateFromTMUX(st *state.RuntimeState) error {
 	panes, err := tmux.ListPanes()
 	if err != nil {
@@ -310,6 +422,18 @@ func parseMetadata(values []string) map[string]string {
 	return out
 }
 
+func selfExecutable() (string, error) {
+	exe, err := os.Executable()
+	if err != nil {
+		return "", fmt.Errorf("resolve executable: %w", err)
+	}
+	exe, err = filepath.EvalSymlinks(exe)
+	if err != nil {
+		exe = filepath.Clean(exe)
+	}
+	return exe, nil
+}
+
 type multiFlag []string
 
 func (m *multiFlag) String() string {
@@ -322,7 +446,7 @@ func (m *multiFlag) Set(value string) error {
 }
 
 func usage(name string) {
-	fmt.Fprintf(os.Stderr, "usage: %s <sidebar|toggle|open|close|start|update|finish|cleanup> [flags]\n", name)
+	fmt.Fprintf(os.Stderr, "usage: %s <sidebar|toggle|open|close|new-window|prepare|start|update|finish|cleanup> [flags]\n", name)
 }
 
 func Exit(args []string) {
