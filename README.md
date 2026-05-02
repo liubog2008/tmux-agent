@@ -8,7 +8,7 @@ This minimal MVP provides three main pieces:
 ## Build
 
 ```bash
-./scripts/build.sh
+make
 ```
 
 This produces:
@@ -17,12 +17,37 @@ This produces:
 ./bin/tmux-agent
 ```
 
+The existing build script still works:
+
+```bash
+./scripts/build.sh
+```
+
+## Install
+
+```bash
+make install
+```
+
+By default this installs:
+
+```bash
+/usr/local/bin/tmux-agent
+/usr/local/share/tmux-agent/agent-sidebar.tmux
+```
+
+You can override the install prefix if needed:
+
+```bash
+make install PREFIX="$HOME/.local"
+```
+
 ## Load in tmux
 
 Add this to `~/.tmux.conf`:
 
 ```tmux
-source-file /path/to/tmux-agent/agent-sidebar.tmux
+source-file /usr/local/share/tmux-agent/agent-sidebar.tmux
 ```
 
 Then reload your tmux config:
@@ -35,7 +60,7 @@ Default key binding:
 
 - `prefix + A`: open or close the right sidebar
 
-The tmux plugin defaults `@agent-sidebar-bin` to `tmux-agent`, so either add `./bin` to your `PATH` or override it in `~/.tmux.conf`:
+The tmux plugin defaults `@agent-sidebar-bin` to `tmux-agent`, so make sure the installed binary is in your `PATH`, or override it in `~/.tmux.conf`:
 
 ```tmux
 set -g @agent-sidebar-bin "/absolute/path/to/bin/tmux-agent"
