@@ -118,8 +118,41 @@ func SelectPane(paneID string) error {
 	return err
 }
 
+func SelectWindow(windowID string) error {
+	_, err := run("select-window", "-t", windowID)
+	return err
+}
+
 func SwitchClient(sessionID string) error {
 	_, err := run("switch-client", "-t", sessionID)
+	return err
+}
+
+func FocusPane(sessionID, windowID, paneID string) error {
+	args := make([]string, 0, 11)
+	appendCommand := func(parts ...string) {
+		if len(parts) == 0 {
+			return
+		}
+		if len(args) > 0 {
+			args = append(args, ";")
+		}
+		args = append(args, parts...)
+	}
+
+	if sessionID != "" {
+		appendCommand("switch-client", "-t", sessionID)
+	}
+	if windowID != "" {
+		appendCommand("select-window", "-t", windowID)
+	}
+	if paneID != "" {
+		appendCommand("select-pane", "-t", paneID)
+	}
+	if len(args) == 0 {
+		return nil
+	}
+	_, err := run(args...)
 	return err
 }
 
