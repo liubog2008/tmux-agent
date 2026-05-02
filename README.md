@@ -59,7 +59,7 @@ tmux source-file ~/.tmux.conf
 Default key binding:
 
 - `prefix + A`: open or close the right sidebar
-- `prefix + N`: create a new `agent` window and register it in the sidebar
+- `prefix + N`: create a new `agent` window in the dedicated `__agent__` session and register it in the sidebar
 
 The tmux plugin defaults `@agent-sidebar-bin` to `tmux-agent`, so make sure the installed binary is in your `PATH`, or override it in `~/.tmux.conf`:
 
@@ -73,6 +73,27 @@ The plugin also installs tmux hooks so that:
 - moving focus away from the sidebar automatically closes it
 
 This behavior is implemented with tmux `focus-events` and the `pane-focus-out` hook, which calls `tmux-agent close --pane-id #{hook_pane}`.
+
+The plugin also prepends a single aggregated agent slot to `status-right`:
+
+- `A:0`: no agent windows
+- `A:3`: three active agent windows
+- `A:2?`: at least one agent is waiting for input
+- `A:1!`: at least one agent is in error
+
+If needed, you can override the dedicated agent session name:
+
+```tmux
+set -g @agent-sidebar-agent-session-name "__agent__"
+```
+
+For the dedicated `__agent__` session, tmux-agent also sets:
+
+```tmux
+set -t __agent__ detach-on-destroy off
+```
+
+so when that session is destroyed, tmux switches the client back to the most recently active remaining session. This only applies to the agent session, not globally to every tmux session.
 
 ## Manually write test state
 

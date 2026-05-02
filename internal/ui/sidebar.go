@@ -50,14 +50,14 @@ type actionErrMsg struct {
 }
 
 type Model struct {
-	agents       []AgentItem
-	sessions     []SessionItem
-	err          error
-	width        int
-	height       int
+	agents        []AgentItem
+	sessions      []SessionItem
+	err           error
+	width         int
+	height        int
 	activeSection string
-	agentIndex   int
-	sessionIndex int
+	agentIndex    int
+	sessionIndex  int
 }
 
 func NewModel() Model {
@@ -240,6 +240,11 @@ func loadSnapshotCmd() tea.Cmd {
 
 func loadSnapshot() (snapshot, error) {
 	var snap snapshot
+	agentSessionName, err := tmux.ShowOption("@agent-sidebar-agent-session-name")
+	if err != nil || agentSessionName == "" {
+		agentSessionName = "__agent__"
+	}
+
 	panes, err := tmux.ListPanes()
 	if err != nil {
 		return snap, err
@@ -250,10 +255,13 @@ func loadSnapshot() (snapshot, error) {
 	}
 
 	agentSessionSet := map[string]bool{}
+	agentWindows := map[string]AgentItem{}
 	for _, pane := range panes {
-		if pane.AgentRole != "agent" || pane.RuntimeKey == "" {
+		if pane.SessionName != agentSessionName {
 			continue
 		}
+		agentSessionSet[pane.SessionID] = true
+
 		item := AgentItem{
 			RuntimeKey:  pane.RuntimeKey,
 			Source:      pane.AgentSource,
@@ -266,22 +274,40 @@ func loadSnapshot() (snapshot, error) {
 			Title:       pane.AgentTitle,
 			Repo:        pane.CurrentPath,
 		}
-		if st, err := state.Load(pane.RuntimeKey); err == nil {
-			if st.Title != "" {
-				item.Title = st.Title
-			}
-			if st.Status != "" {
-				item.Status = st.Status
-			}
-			if st.Source != "" {
-				item.Source = st.Source
-			}
-			if st.Repo != "" {
-				item.Repo = st.Repo
+		if item.Source == "" {
+			item.Source = "agent"
+		}
+		if item.Title == "" {
+			item.Title = pane.WindowName
+		}
+		if item.Status == "" {
+			item.Status = state.StatusIdle
+		}
+		if pane.RuntimeKey != "" {
+			if st, err := state.Load(pane.RuntimeKey); err == nil {
+				if st.Title != "" {
+					item.Title = st.Title
+				}
+				if st.Status != "" {
+					item.Status = st.Status
+				}
+				if st.Source != "" {
+					item.Source = st.Source
+				}
+				if st.Repo != "" {
+					item.Repo = st.Repo
+				}
 			}
 		}
+
+		existing, ok := agentWindows[pane.WindowID]
+		if !ok || preferAgentItem(item, existing) {
+			agentWindows[pane.WindowID] = item
+		}
+	}
+
+	for _, item := range agentWindows {
 		snap.Agents = append(snap.Agents, item)
-		agentSessionSet[pane.SessionID] = true
 	}
 
 	sort.Slice(snap.Agents, func(i, j int) bool {
@@ -292,14 +318,13 @@ func loadSnapshot() (snapshot, error) {
 	})
 
 	for _, sess := range sessions {
+		if sess.SessionName == agentSessionName {
+			continue
+		}
 		containsAgent := agentSessionSet[sess.SessionID]
-		kind := sess.SessionKind
-		if kind == "" {
-			if containsAgent {
-				kind = "agent"
-			} else {
-				kind = "normal"
-			}
+		kind := "normal"
+		if containsAgent {
+			kind = "agent"
 		}
 		if kind == "agent" || containsAgent {
 			continue
@@ -327,4 +352,17 @@ func truncate(s string, width int) string {
 		return s[:width]
 	}
 	return s[:width-1] + "…"
+}
+
+func preferAgentItem(candidate, existing AgentItem) bool {
+	if existing.RuntimeKey == "" && candidate.RuntimeKey != "" {
+		return true
+	}
+	if existing.RuntimeKey != "" && candidate.RuntimeKey == "" {
+		return false
+	}
+	if candidate.PaneID < existing.PaneID {
+		return true
+	}
+	return false
 }

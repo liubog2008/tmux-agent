@@ -27,6 +27,8 @@ func Run(args []string) error {
 	switch args[1] {
 	case "sidebar":
 		err = runSidebar()
+	case "status-segment":
+		err = runStatusSegment()
 	case "toggle":
 		err = runToggle()
 	case "open":
@@ -140,10 +142,18 @@ func runNewWindow() error {
 		windowName = "agent"
 	}
 
+	agentSessionName, err := tmux.ShowOption("@agent-sidebar-agent-session-name")
+	if err != nil || agentSessionName == "" {
+		agentSessionName = "__agent__"
+	}
+
 	currentPath, err := tmux.Format("#{pane_current_path}")
 	if err != nil || currentPath == "" {
 		currentPath, _ = os.Getwd()
 	}
+
+	ownerSessionID, _ := tmux.Format("#{session_id}")
+	ownerSessionName, _ := tmux.Format("#{session_name}")
 
 	defaultShell, err := tmux.ShowOption("default-shell")
 	if err != nil || defaultShell == "" {
@@ -154,15 +164,35 @@ func runNewWindow() error {
 	}
 
 	runtimeKey := fmt.Sprintf("agent-%d-%d", time.Now().Unix(), os.Getpid())
-	paneID, err := tmux.NewWindow(
-		currentPath,
-		windowName,
+	sessionExists, err := tmux.HasSession(agentSessionName)
+	if err != nil {
+		return err
+	}
+
+	command := []string{
 		"env",
-		"TMUX_AGENT_RUNTIME_KEY="+runtimeKey,
-		"TMUX_AGENT_BIN="+exe,
+		"TMUX_AGENT_RUNTIME_KEY=" + runtimeKey,
+		"TMUX_AGENT_BIN=" + exe,
 		defaultShell,
 		"-l",
-	)
+	}
+
+	var paneID string
+	if sessionExists {
+		paneID, err = tmux.NewWindowInSession(
+			agentSessionName,
+			currentPath,
+			windowName,
+			command...,
+		)
+	} else {
+		paneID, err = tmux.NewDetachedSession(
+			agentSessionName,
+			currentPath,
+			windowName,
+			command...,
+		)
+	}
 	if err != nil {
 		return err
 	}
@@ -186,10 +216,14 @@ func runNewWindow() error {
 	if err := enrichStateFromTMUX(&st); err != nil {
 		return err
 	}
+	applyAgentOwnership(&st, ownerSessionID, ownerSessionName)
 	if err := state.Save(st); err != nil {
 		return err
 	}
-	return syncTMUX(st, paneID)
+	if err := syncTMUX(st, paneID); err != nil {
+		return err
+	}
+	return tmux.FocusPane(st.TmuxSession, st.TmuxWindow, paneID)
 }
 
 func runPrepare(args []string) error {
@@ -294,7 +328,85 @@ func runCleanup(args []string) error {
 	_ = tmux.SetPaneOption(*paneID, "@agent_status", "")
 	_ = tmux.SetPaneOption(*paneID, "@agent_updated_at", "")
 	_ = tmux.SetPaneOption(*paneID, "@agent_title", "")
+	_ = tmux.SetPaneOption(*paneID, "@agent_owner_session_id", "")
+	_ = tmux.SetPaneOption(*paneID, "@agent_owner_session_name", "")
 	return state.Delete(*runtimeKey)
+}
+
+func runStatusSegment() error {
+	agentSessionName, err := tmux.ShowOption("@agent-sidebar-agent-session-name")
+	if err != nil || agentSessionName == "" {
+		agentSessionName = "__agent__"
+	}
+
+	panes, err := tmux.ListPanes()
+	if err != nil {
+		return err
+	}
+
+	windowStatuses := map[string]string{}
+	hasAttention := false
+	hasWaiting := false
+	for _, pane := range panes {
+		if pane.SessionName != agentSessionName {
+			continue
+		}
+		status := pane.AgentStatus
+		if status == "" {
+			status = state.StatusIdle
+		}
+		if pane.RuntimeKey != "" {
+			if st, err := state.Load(pane.RuntimeKey); err == nil && st.Status != "" {
+				status = st.Status
+			}
+		}
+		if current, ok := windowStatuses[pane.WindowID]; !ok || statusPriority(status) > statusPriority(current) {
+			windowStatuses[pane.WindowID] = status
+		}
+	}
+
+	for _, status := range windowStatuses {
+		switch status {
+		case state.StatusError:
+			hasAttention = true
+		case state.StatusWaitingInput:
+			hasWaiting = true
+		}
+	}
+
+	count := len(windowStatuses)
+	style := "#[fg=8]"
+	suffix := ""
+	switch {
+	case hasAttention:
+		style = "#[fg=9]"
+		suffix = "!"
+	case hasWaiting:
+		style = "#[fg=11]"
+		suffix = "?"
+	case count > 0:
+		style = "#[fg=10]"
+	}
+
+	fmt.Printf("%sA:%d%s#[default]", style, count, suffix)
+	return nil
+}
+
+func statusPriority(status string) int {
+	switch status {
+	case state.StatusError:
+		return 5
+	case state.StatusWaitingInput:
+		return 4
+	case state.StatusRunning:
+		return 3
+	case state.StatusStarting:
+		return 2
+	case state.StatusSuccess, state.StatusIdle:
+		return 1
+	default:
+		return 0
+	}
 }
 
 func parseCommonFlags(fs *flag.FlagSet, args []string, requireStartFields bool) (state.UpdateInput, string, map[string]string, error) {
@@ -370,6 +482,10 @@ func enrichStateFromTMUX(st *state.RuntimeState) error {
 			continue
 		}
 		st.TmuxSession = pane.SessionID
+		if st.Metadata == nil {
+			st.Metadata = map[string]string{}
+		}
+		st.Metadata["tmux_session_name"] = pane.SessionName
 		st.TmuxWindow = pane.WindowID
 		st.TmuxWindowName = pane.WindowName
 		if st.CWD == "" {
@@ -395,16 +511,40 @@ func syncTMUX(st state.RuntimeState, paneID string) error {
 		{"@agent_status", st.Status},
 		{"@agent_updated_at", st.UpdatedAt},
 		{"@agent_title", st.Title},
+		{"@agent_owner_session_id", st.Metadata["owner_session_id"]},
+		{"@agent_owner_session_name", st.Metadata["owner_session_name"]},
 	}
 	for _, kv := range updates {
 		if err := tmux.SetPaneOption(targetPane, kv[0], kv[1]); err != nil {
 			return err
 		}
 	}
-	if st.TmuxSession != "" {
+	agentSessionName, err := tmux.ShowOption("@agent-sidebar-agent-session-name")
+	if err != nil || agentSessionName == "" {
+		agentSessionName = "__agent__"
+	}
+	if st.Metadata["tmux_session_name"] == agentSessionName && st.TmuxSession != "" {
 		_ = tmux.SetSessionOption(st.TmuxSession, "@session_kind", "agent")
+		_ = tmux.SetSessionOption(st.TmuxSession, "detach-on-destroy", "off")
+		_ = tmux.SetSessionOption(st.TmuxSession, "@agent_owner_session_id", st.Metadata["owner_session_id"])
+		_ = tmux.SetSessionOption(st.TmuxSession, "@agent_owner_session_name", st.Metadata["owner_session_name"])
+	}
+	if st.Metadata["tmux_session_name"] == agentSessionName && st.TmuxWindow != "" {
+		_ = tmux.SetWindowOption(st.TmuxWindow, "@window_kind", "agent")
 	}
 	return nil
+}
+
+func applyAgentOwnership(st *state.RuntimeState, ownerSessionID, ownerSessionName string) {
+	if st.Metadata == nil {
+		st.Metadata = map[string]string{}
+	}
+	if ownerSessionID != "" {
+		st.Metadata["owner_session_id"] = ownerSessionID
+	}
+	if ownerSessionName != "" {
+		st.Metadata["owner_session_name"] = ownerSessionName
+	}
 }
 
 func parseMetadata(values []string) map[string]string {
@@ -446,7 +586,7 @@ func (m *multiFlag) Set(value string) error {
 }
 
 func usage(name string) {
-	fmt.Fprintf(os.Stderr, "usage: %s <sidebar|toggle|open|close|new-window|prepare|start|update|finish|cleanup> [flags]\n", name)
+	fmt.Fprintf(os.Stderr, "usage: %s <sidebar|status-segment|toggle|open|close|new-window|prepare|start|update|finish|cleanup> [flags]\n", name)
 }
 
 func Exit(args []string) {
