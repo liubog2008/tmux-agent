@@ -13,13 +13,11 @@ PLUGIN := agent-sidebar.tmux
 
 all: build
 
-build: $(BIN)
-
-$(BIN):
+build:
 	mkdir -p $(BIN_DIR)
 	$(GO) build -o $(BIN) ./cmd/tmux-agent
 
-install: $(BIN)
+install: build
 	$(INSTALL) -d $(DESTDIR)$(BINDIR)
 	$(INSTALL) -m 0755 $(BIN) $(DESTDIR)$(BINDIR)/tmux-agent
 	$(INSTALL) -d $(DESTDIR)$(DATADIR)

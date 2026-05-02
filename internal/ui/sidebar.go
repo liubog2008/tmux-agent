@@ -45,6 +45,9 @@ type snapshot struct {
 type tickMsg time.Time
 
 type snapshotMsg snapshot
+type actionErrMsg struct {
+	err error
+}
 
 type Model struct {
 	agents       []AgentItem
@@ -102,21 +105,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.activeSection == "sessions" && m.sessionIndex > 0 {
 				m.sessionIndex--
 			}
-		case "enter":
+		case "enter", "ctrl+m":
 			if m.activeSection == "agents" && len(m.agents) > 0 {
 				target := m.agents[m.agentIndex]
 				return m, func() tea.Msg {
-					if target.SessionID != "" {
-						_ = tmux.SwitchClient(target.SessionID)
+					if err := tmux.FocusPane(target.SessionID, target.WindowID, target.PaneID); err != nil {
+						return actionErrMsg{err: err}
 					}
-					_ = tmux.SelectPane(target.PaneID)
 					return nil
 				}
 			}
 			if m.activeSection == "sessions" && len(m.sessions) > 0 {
 				target := m.sessions[m.sessionIndex]
 				return m, func() tea.Msg {
-					_ = tmux.SwitchClient(target.SessionID)
+					if err := tmux.SwitchClient(target.SessionID); err != nil {
+						return actionErrMsg{err: err}
+					}
 					return nil
 				}
 			}
@@ -126,13 +130,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case snapshotMsg:
 		m.agents = msg.Agents
 		m.sessions = msg.Sessions
-		m.err = msg.Err
+		if msg.Err != nil {
+			m.err = msg.Err
+		}
 		if m.agentIndex >= len(m.agents) {
 			m.agentIndex = max(0, len(m.agents)-1)
 		}
 		if m.sessionIndex >= len(m.sessions) {
 			m.sessionIndex = max(0, len(m.sessions)-1)
 		}
+	case actionErrMsg:
+		m.err = msg.err
 	}
 	return m, nil
 }
