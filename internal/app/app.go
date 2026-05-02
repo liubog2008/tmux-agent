@@ -35,8 +35,8 @@ func Run(args []string) error {
 		err = runOpen()
 	case "close":
 		err = runClose(args[2:])
-	case "new-window":
-		err = runNewWindow()
+	case "switch-window":
+		err = runSwitchWindow()
 	case "prepare":
 		err = runPrepare(args[2:])
 	case "start":
@@ -131,7 +131,65 @@ func runClose(args []string) error {
 	return tmux.KillPane(targetPane)
 }
 
-func runNewWindow() error {
+func runSwitchWindow() error {
+	currentPaneID, _ := tmux.Format("#{pane_id}")
+	currentSessionID, _ := tmux.Format("#{session_id}")
+	currentSessionName, _ := tmux.Format("#{session_name}")
+	currentWindowID, _ := tmux.Format("#{window_id}")
+	currentWindowName, _ := tmux.Format("#{window_name}")
+
+	currentPath, err := tmux.Format("#{pane_current_path}")
+	if err != nil || currentPath == "" {
+		currentPath, _ = os.Getwd()
+	}
+
+	agentSessionName, err := tmux.ShowOption("@agent-sidebar-agent-session-name")
+	if err != nil || agentSessionName == "" {
+		agentSessionName = "__agent__"
+	}
+
+	panes, err := tmux.ListPanes()
+	if err != nil {
+		return err
+	}
+
+	currentPane := findPaneByID(panes, currentPaneID)
+	currentIsAgent := currentSessionName == agentSessionName
+	if currentPane != nil && currentPane.WindowKind == "agent" {
+		currentIsAgent = true
+	}
+
+	if currentIsAgent {
+		targetPane, targetSessionTarget, targetWindowID, targetWindowName := resolveNormalWindowTarget(currentPane)
+		if targetPane != "" {
+			return tmux.FocusPane(targetSessionTarget, targetWindowID, targetPane)
+		}
+		if targetSessionTarget == "" {
+			return errors.New("agent window is missing owner session metadata")
+		}
+		if targetWindowName == "" {
+			targetWindowName = "main"
+		}
+		paneID, err := tmux.NewWindowInSession(targetSessionTarget, currentPath, targetWindowName)
+		if err != nil {
+			return err
+		}
+		return tmux.FocusPane(targetSessionTarget, "", paneID)
+	}
+
+	for _, pane := range panes {
+		if pane.SessionName != agentSessionName {
+			continue
+		}
+		if pane.OwnerSessionID == currentSessionID && pane.OwnerWindowID == currentWindowID {
+			return tmux.FocusPane(pane.SessionID, pane.WindowID, pane.PaneID)
+		}
+	}
+
+	return createAgentWindow(currentPath, currentSessionID, currentSessionName, currentWindowID, currentWindowName)
+}
+
+func createAgentWindow(currentPath, ownerSessionID, ownerSessionName, ownerWindowID, ownerWindowName string) error {
 	exe, err := selfExecutable()
 	if err != nil {
 		return err
@@ -141,19 +199,10 @@ func runNewWindow() error {
 	if err != nil || windowName == "" {
 		windowName = "agent"
 	}
-
 	agentSessionName, err := tmux.ShowOption("@agent-sidebar-agent-session-name")
 	if err != nil || agentSessionName == "" {
 		agentSessionName = "__agent__"
 	}
-
-	currentPath, err := tmux.Format("#{pane_current_path}")
-	if err != nil || currentPath == "" {
-		currentPath, _ = os.Getwd()
-	}
-
-	ownerSessionID, _ := tmux.Format("#{session_id}")
-	ownerSessionName, _ := tmux.Format("#{session_name}")
 
 	defaultShell, err := tmux.ShowOption("default-shell")
 	if err != nil || defaultShell == "" {
@@ -216,7 +265,7 @@ func runNewWindow() error {
 	if err := enrichStateFromTMUX(&st); err != nil {
 		return err
 	}
-	applyAgentOwnership(&st, ownerSessionID, ownerSessionName)
+	applyAgentOwnership(&st, ownerSessionID, ownerSessionName, ownerWindowID, ownerWindowName)
 	if err := state.Save(st); err != nil {
 		return err
 	}
@@ -330,6 +379,8 @@ func runCleanup(args []string) error {
 	_ = tmux.SetPaneOption(*paneID, "@agent_title", "")
 	_ = tmux.SetPaneOption(*paneID, "@agent_owner_session_id", "")
 	_ = tmux.SetPaneOption(*paneID, "@agent_owner_session_name", "")
+	_ = tmux.SetPaneOption(*paneID, "@agent_owner_window_id", "")
+	_ = tmux.SetPaneOption(*paneID, "@agent_owner_window_name", "")
 	return state.Delete(*runtimeKey)
 }
 
@@ -513,6 +564,8 @@ func syncTMUX(st state.RuntimeState, paneID string) error {
 		{"@agent_title", st.Title},
 		{"@agent_owner_session_id", st.Metadata["owner_session_id"]},
 		{"@agent_owner_session_name", st.Metadata["owner_session_name"]},
+		{"@agent_owner_window_id", st.Metadata["owner_window_id"]},
+		{"@agent_owner_window_name", st.Metadata["owner_window_name"]},
 	}
 	for _, kv := range updates {
 		if err := tmux.SetPaneOption(targetPane, kv[0], kv[1]); err != nil {
@@ -528,6 +581,8 @@ func syncTMUX(st state.RuntimeState, paneID string) error {
 		_ = tmux.SetSessionOption(st.TmuxSession, "detach-on-destroy", "off")
 		_ = tmux.SetSessionOption(st.TmuxSession, "@agent_owner_session_id", st.Metadata["owner_session_id"])
 		_ = tmux.SetSessionOption(st.TmuxSession, "@agent_owner_session_name", st.Metadata["owner_session_name"])
+		_ = tmux.SetSessionOption(st.TmuxSession, "@agent_owner_window_id", st.Metadata["owner_window_id"])
+		_ = tmux.SetSessionOption(st.TmuxSession, "@agent_owner_window_name", st.Metadata["owner_window_name"])
 	}
 	if st.Metadata["tmux_session_name"] == agentSessionName && st.TmuxWindow != "" {
 		_ = tmux.SetWindowOption(st.TmuxWindow, "@window_kind", "agent")
@@ -535,7 +590,7 @@ func syncTMUX(st state.RuntimeState, paneID string) error {
 	return nil
 }
 
-func applyAgentOwnership(st *state.RuntimeState, ownerSessionID, ownerSessionName string) {
+func applyAgentOwnership(st *state.RuntimeState, ownerSessionID, ownerSessionName, ownerWindowID, ownerWindowName string) {
 	if st.Metadata == nil {
 		st.Metadata = map[string]string{}
 	}
@@ -545,6 +600,48 @@ func applyAgentOwnership(st *state.RuntimeState, ownerSessionID, ownerSessionNam
 	if ownerSessionName != "" {
 		st.Metadata["owner_session_name"] = ownerSessionName
 	}
+	if ownerWindowID != "" {
+		st.Metadata["owner_window_id"] = ownerWindowID
+	}
+	if ownerWindowName != "" {
+		st.Metadata["owner_window_name"] = ownerWindowName
+	}
+}
+
+func findPaneByID(panes []tmux.Pane, paneID string) *tmux.Pane {
+	for i := range panes {
+		if panes[i].PaneID == paneID {
+			return &panes[i]
+		}
+	}
+	return nil
+}
+
+func resolveNormalWindowTarget(currentPane *tmux.Pane) (paneID, sessionTarget, windowID, windowName string) {
+	if currentPane == nil {
+		return "", "", "", ""
+	}
+	paneID = ""
+	sessionTarget = currentPane.OwnerSessionID
+	windowID = currentPane.OwnerWindowID
+	if sessionTarget == "" {
+		sessionTarget, _ = tmux.ShowPaneOption(currentPane.PaneID, "@agent_owner_session_name")
+	}
+	windowName, _ = tmux.ShowPaneOption(currentPane.PaneID, "@agent_owner_window_name")
+	if windowName == "" {
+		windowName = "main"
+	}
+
+	panes, err := tmux.ListPanes()
+	if err != nil {
+		return "", sessionTarget, windowID, windowName
+	}
+	for _, pane := range panes {
+		if pane.SessionID == sessionTarget && pane.WindowID == windowID {
+			return pane.PaneID, sessionTarget, windowID, windowName
+		}
+	}
+	return "", sessionTarget, windowID, windowName
 }
 
 func parseMetadata(values []string) map[string]string {
@@ -586,7 +683,7 @@ func (m *multiFlag) Set(value string) error {
 }
 
 func usage(name string) {
-	fmt.Fprintf(os.Stderr, "usage: %s <sidebar|status-segment|toggle|open|close|new-window|prepare|start|update|finish|cleanup> [flags]\n", name)
+	fmt.Fprintf(os.Stderr, "usage: %s <sidebar|status-segment|toggle|open|close|switch-window|prepare|start|update|finish|cleanup> [flags]\n", name)
 }
 
 func Exit(args []string) {
